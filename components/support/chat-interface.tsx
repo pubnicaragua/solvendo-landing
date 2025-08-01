@@ -9,6 +9,11 @@ import { useEffect, useRef } from "react"
 import Image from "next/image"
 
 export function ChatInterface() {
+  // Función auxiliar para enviar preguntas frecuentes
+  const sendFAQ = (question: string) => {
+    handleInputChange({ target: { value: question } });
+    setTimeout(() => handleSubmit(), 0);
+  };
   const { messages, input, handleInputChange, handleSubmit, isLoading } = useChat({
     api: "/api/chat", // Asegúrate de que esto apunte a tu ruta de API
   })
@@ -32,6 +37,14 @@ export function ChatInterface() {
         {messages.length === 0 && (
           <div className="text-center text-gray-500 mt-10">
             ¡Hola! Soy tu asistente de Solvendo. ¿En qué puedo ayudarte hoy?
+            <div className="mt-6">
+              <div className="font-semibold mb-2 text-blue-600">Preguntas frecuentes:</div>
+              <div className="flex flex-col gap-2 items-center">
+                <Button variant="outline" size="sm" className="w-full max-w-xs" onClick={() => sendFAQ("¿La demo requiere método de pago?")}>¿La demo requiere método de pago?</Button>
+                <Button variant="outline" size="sm" className="w-full max-w-xs" onClick={() => sendFAQ("¿Qué procesos automatiza Solvendo?")}>¿Qué procesos automatiza Solvendo?</Button>
+                <Button variant="outline" size="sm" className="w-full max-w-xs" onClick={() => sendFAQ("¿Solvendo funciona como software punto de venta (POS)?")}>¿Solvendo funciona como software punto de venta (POS)?</Button>
+              </div>
+            </div>
           </div>
         )}
         {messages.map((m) => (
