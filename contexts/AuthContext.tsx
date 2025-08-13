@@ -53,7 +53,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           
         if (session?.user) {  
           console.log('✅ Sesión encontrada para:', session.user.email)  
-            
           const { data: userData, error: userError } = await supabase  
             .from('usuarios')  
             .select('*')  
@@ -143,7 +142,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email,  
         password,  
       })  
-  
+        
       if (error) {  
         console.error('❌ Error de autenticación Supabase:', error)  
         throw error  
@@ -258,17 +257,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }  
           
         // Crear usuario  
-        await supabase  
-          .from('usuarios')  
-          .insert({  
-            email: demoData.email,  
-            nombres: demoData.name.split(' ')[0] || demoData.name,  
-            apellidos: demoData.name.split(' ').slice(1).join(' ') || '',  
-            rut: demoData.rut || `TEMP-${data.user.id}`,  
-            empresa_id: empresaId,  
-            auth_user_id: data.user.id,  
-            activo: true  
-          })  
+        await supabase.from('usuarios').insert({  
+          email: demoData.email,  
+          nombres: demoData.name.split(' ')[0] || demoData.name,  
+          apellidos: demoData.name.split(' ').slice(1).join(' ') || '',  
+          rut: demoData.rut || `TEMP-${data.user.id}`,  
+          empresa_id: empresaId,  
+          auth_user_id: data.user.id,  
+          activo: true  
+        })  
           
         // Crear datos adicionales  
         if (empresaId) {  
@@ -309,23 +306,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .single()  
           
         if (nuevaEmpresa) {  
-          await supabase  
-            .from('usuarios')  
-            .insert({  
-              email: email,  
-              nombres: 'Usuario',  
-              apellidos: '',  
-              rut: `TEMP-${data.user.id}`,  
-              empresa_id: nuevaEmpresa.id,  
-              auth_user_id: data.user.id,  
-              activo: true  
-            })  
+          await supabase.from('usuarios').insert({  
+            email: email,  
+            nombres: 'Usuario',  
+            apellidos: '',  
+            rut: `TEMP-${data.user.id}`,  
+            empresa_id: nuevaEmpresa.id,  
+            auth_user_id: data.user.id,  
+            activo: true  
+          })  
         }  
           
         console.log('✅ Usuario básico creado')  
         return  
       }  
-        
     } catch (error) {  
       console.error('💥 Error completo en login:', error)  
       throw error  
