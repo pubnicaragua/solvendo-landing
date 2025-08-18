@@ -34,39 +34,33 @@ interface SaveProgressParams {
   
 export async function saveDemoProgress({ formData, currentStep, isFinalSubmission }: SaveProgressParams) {  
   console.log(`🔧 Server Action saveDemoProgress iniciada. Paso: ${currentStep}, Final: ${isFinalSubmission}`)  
-    
-  // Logs de debugging para variables de entorno  
-  console.log('🔍 Variables de entorno:')  
-  console.log('SUPABASE_URL:', process.env.NEXT_PUBLIC_SUPABASE_URL)  
-  console.log('SERVICE_ROLE_KEY presente:', !!process.env.SUPABASE_SERVICE_ROLE_KEY)  
-    
+      
   const supabase = createServerClient()  
   console.log('✅ Cliente Supabase creado')  
-  
+    
   try {  
-    // Validar campos requeridos según la estructura de la tabla  
+    // Validar campos requeridos  
     if (!formData.name || !formData.email) {  
       console.error('❌ Campos requeridos faltantes: name o email')  
-      return {   
-        success: false,   
-        message: "Nombre y email son requeridos."   
+      return {     
+        success: false,     
+        message: "Nombre y email son requeridos."     
       }  
     }  
   
-    // Manejar contraseña - solo hashear si está presente y no está ya hasheada  
+    // Manejar contraseña  
     let hashedPassword = formData.password || ''  
     if (formData.password && currentStep >= 1 && !formData.password.startsWith('$2b$')) {  
       hashedPassword = await bcrypt.hash(formData.password, 10)  
       console.log('🔐 Contraseña hasheada')  
     }  
   
-    // Asegurar que la contraseña no esté vacía para campos NOT NULL  
     if (!hashedPassword) {  
       hashedPassword = await bcrypt.hash('temp_password_' + Date.now(), 10)  
       console.log('🔐 Contraseña temporal generada')  
     }  
   
-    // Preparar datos asegurando tipos correctos  
+    // Preparar datos - CORRECCIÓN: manejar skuCount correctamente  
     const dataToSave: any = {  
       name: formData.name.trim(),  
       email: formData.email.trim().toLowerCase(),  
@@ -77,32 +71,33 @@ export async function saveDemoProgress({ formData, currentStep, isFinalSubmissio
       region: formData.region?.trim() || null,  
       comuna: formData.comuna?.trim() || null,  
       business_type: formData.businessType === "other" ? formData.otherBusinessType?.trim() : formData.businessType?.trim(),  
-      apps: formData.apps || null, // ARRAY type - mantener como array o null  
+      apps: formData.apps || null,  
       employees: formData.employees === "+20" ? `Más de 20: ${formData.estimatedEmployees}` : formData.employees,  
-      branches: formData.branches ? parseInt(formData.branches.toString()) : null, // Asegurar INTEGER  
-      total_boxes: formData.totalBoxes ? parseInt(formData.totalBoxes.toString()) : null, // Asegurar INTEGER  
+      branches: formData.branches ? parseInt(formData.branches.toString()) : null,  
+      total_boxes: formData.totalBoxes ? parseInt(formData.totalBoxes.toString()) : null,  
       dte: formData.dte || null,  
-      sku_count: formData.skuCount === "1,500+" ? `Más de 1,500: ${formData.estimatedSkuCount}` : formData.skuCount,  
+      // CORRECCIÓN: Cambiar "1,500+" por "1.500+" para coincidir con el frontend  
+      sku_count: formData.skuCount === "1.500+" ? `Más de 1,500: ${formData.estimatedSkuCount}` : formData.skuCount,  
       offline_mode: formData.offlineMode || null,  
-      last_step_completed: parseInt(currentStep.toString()), // Asegurar INTEGER  
+      last_step_completed: parseInt(currentStep.toString()),  
       status: isFinalSubmission ? "completed" : "pending",  
     }  
   
-    // Limpiar campos undefined/null innecesarios pero mantener estructura  
+    // Limpiar campos undefined  
     Object.keys(dataToSave).forEach((key) => {  
       if (dataToSave[key] === undefined) {  
         dataToSave[key] = null  
       }  
     })  
-      
+        
     console.log('📝 Datos a guardar:', JSON.stringify(dataToSave, null, 2))  
   
-    // Intentar insertar o actualizar el registro  
+    // Upsert en demo_registrations  
     const { data: result, error: dbError } = await supabase  
       .from("demo_registrations")  
-      .upsert(dataToSave, {   
-        onConflict: "email",   
-        ignoreDuplicates: false   
+      .upsert(dataToSave, {     
+        onConflict: "email",     
+        ignoreDuplicates: false     
       })  
       .select()  
   
@@ -113,15 +108,15 @@ export async function saveDemoProgress({ formData, currentStep, isFinalSubmissio
         hint: dbError.hint,  
         code: dbError.code  
       })  
-      return {   
-        success: false,   
-        message: "Error al guardar el progreso de la demo. Por favor, inténtalo de nuevo."   
+      return {     
+        success: false,     
+        message: "Error al guardar el progreso de la demo. Por favor, inténtalo de nuevo."     
       }  
     }  
   
     console.log('✅ Datos guardados exitosamente:', result)  
   
-    // Si es la sumisión final, enviar correos  
+    // Enviar correos si es sumisión final  
     if (isFinalSubmission) {  
       if (process.env.SENDGRID_API_KEY) {  
         console.log("📧 SENDGRID_API_KEY detectada. Intentando enviar correos.")  
@@ -129,7 +124,6 @@ export async function saveDemoProgress({ formData, currentStep, isFinalSubmissio
   
         const businessTypeName = formData.businessType === "other" ? formData.otherBusinessType : formData.businessType  
   
-        // Email para Solvendo  
         const msgToSolvendo = {  
           to: "registros@solvendo.cl",  
           from: "registros@solvendo.cl",  
@@ -149,13 +143,12 @@ export async function saveDemoProgress({ formData, currentStep, isFinalSubmissio
               <li><strong>Dirección:</strong> ${formData.direccion || "N/A"}, ${formData.comuna || "N/A"}, ${formData.region || "N/A"}</li>  
               <li><strong>Cajas Totales:</strong> ${formData.totalBoxes || "N/A"}</li>  
               <li><strong>DTE:</strong> ${formData.dte === "yes" ? "Sí" : "No"}</li>  
-              <li><strong>Cantidad SKU:</strong> ${formData.skuCount === "1,500+" ? `Más de 1,500: ${formData.estimatedSkuCount}` : formData.skuCount || "N/A"}</li>  
+              <li><strong>Cantidad SKU:</strong> ${formData.skuCount === "1.500+" ? `Más de 1,500: ${formData.estimatedSkuCount}` : formData.skuCount || "N/A"}</li>  
               <li><strong>Modo Sin Conexión:</strong> ${formData.offlineMode === "yes" ? "Sí" : "No"}</li>  
             </ul>  
           `,  
         }  
   
-        // Email para el Cliente  
         const msgToClient = {  
           to: formData.email,  
           from: "registros@solvendo.cl",  
@@ -177,13 +170,13 @@ export async function saveDemoProgress({ formData, currentStep, isFinalSubmissio
           console.error("❌ Error al enviar correos con SendGrid:", emailError.response?.body || emailError)  
         }  
       } else {  
-        console.warn("⚠️ SENDGRID_API_KEY no está configurada. Las notificaciones por correo electrónico no se enviarán.")  
+        console.warn("⚠️ SENDGRID_API_KEY no está configurada.")  
       }  
     }  
   
-    return {   
-      success: true,   
-      message: isFinalSubmission ? "¡Registro de demo exitoso!" : "Progreso guardado."   
+    return {     
+      success: true,     
+      message: isFinalSubmission ? "¡Registro de demo exitoso!" : "Progreso guardado."     
     }  
   } catch (error) {  
     console.error("💥 Error completo en saveDemoProgress:", error)  
