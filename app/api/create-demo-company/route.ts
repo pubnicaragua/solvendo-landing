@@ -15,11 +15,11 @@ export async function POST(request: NextRequest) {
       }  
     )  
   
-    const {   
-      razon_social,   
-      rut,   
-      direccion,   
-      region,   
+    const {  
+      razon_social,  
+      rut,  
+      direccion,  
+      region,  
       comuna,  
       businessType,  
       apps,  
@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
         empresa_id: empresa.id,  
         nombre: 'Sucursal Principal',  
         direccion,  
-        // region, // ✅ Comentar esta línea temporalmente 
+        // region, // ✅ Comentar esta línea temporalmente  
         activo: true  
       })  
       .select()  
@@ -108,9 +108,13 @@ export async function POST(request: NextRequest) {
   
   } catch (error) {  
     console.error('❌ Error in create-demo-company:', error)  
-    return NextResponse.json({   
-      success: false,   
-      error: error.message || 'Error interno del servidor'   
+      
+    // ✅ Manejo correcto del tipo 'unknown' para TypeScript  
+    const errorMessage = error instanceof Error ? error.message : 'Error interno del servidor'  
+      
+    return NextResponse.json({  
+      success: false,  
+      error: errorMessage  
     }, { status: 500 })  
   }  
 }
