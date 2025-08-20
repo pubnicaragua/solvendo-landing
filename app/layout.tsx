@@ -31,7 +31,7 @@ export default function RootLayout({
         <link rel="icon" type="image/png" href="/images/favicon.png" sizes="32x32" />  
         <link rel="apple-touch-icon" href="/images/favicon.png" />  
         <link rel="shortcut icon" href="/images/favicon.png" />  
-          
+            
         {/* Microsoft Clarity Heatmap Script */}  
         <Script  
           id="microsoft-clarity-script"  
@@ -48,6 +48,7 @@ export default function RootLayout({
         />  
       </head>  
       <body className={inter.className}>  
+        {/* ✅ AuthProvider envuelve todo correctamente */}  
         <AuthProvider>  
           <ThemeProvider   
             attribute="class"   

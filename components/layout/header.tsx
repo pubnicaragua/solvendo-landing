@@ -1,8 +1,7 @@
 "use client"  
-  
 import Link from "next/link"  
 import { useState } from "react"  
-import { Menu, X, User } from "lucide-react"  
+import { Menu, X, User, Settings } from "lucide-react"  
 import { Button } from "@/components/ui/button"  
 import { usePathname } from "next/navigation"  
 import { useAuth } from "@/contexts/AuthContext"  
@@ -17,23 +16,21 @@ interface HeaderProps {
 export function Header({ onMenuToggle, currentView, user: propUser }: HeaderProps) {  
   const [isMenuOpen, setIsMenuOpen] = useState(false)  
   const pathname = usePathname()  
-  const { user: contextUser, logout } = useAuth()  
-    
+  const { user: contextUser, signOut } = useAuth()  
+  
   // Usar el usuario del prop o del contexto  
   const user = propUser || contextUser  
   
   const isActive = (path: string) => {  
-    // If it's a hash link, only apply hover styles, do not mark as active.  
     if (path.startsWith("/#")) {  
       return "hover:text-blue-600"  
     }  
-    // For regular page links, mark as active if pathname matches.  
     return pathname === path ? "text-blue-600 font-medium" : "hover:text-blue-600"  
   }  
   
   const handleLogout = async () => {  
     try {  
-      await logout()  
+      await signOut()  
     } catch (error) {  
       console.error('Error cerrando sesión:', error)  
     }  
@@ -46,7 +43,7 @@ export function Header({ onMenuToggle, currentView, user: propUser }: HeaderProp
           <Link href="/" className="flex items-center gap-2">  
             <Image src="/images/logo_negro.svg" alt="Solvendo Logo" width={130} height={54} />  
           </Link>  
-  
+            
           {/* Desktop Navigation */}  
           <nav className="hidden md:flex items-center gap-6">  
             <Link href="/#tariff-simulator-section" className={`text-sm ${isActive("/#tariff-simulator-section")}`}>  
@@ -64,8 +61,15 @@ export function Header({ onMenuToggle, currentView, user: propUser }: HeaderProp
         {/* Desktop Actions */}  
         <div className="hidden md:flex items-center gap-4">  
           {user ? (  
-            // Usuario autenticado - mostrar información y cerrar sesión  
             <div className="flex items-center gap-3">  
+              {/* Botón de Dashboard */}  
+              <Link href="/dashboard">  
+                <Button variant="outline" size="sm" className="flex items-center gap-2">  
+                  <Settings className="h-4 w-4" />  
+                  Dashboard  
+                </Button>  
+              </Link>  
+                
               <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center">  
                 <User className="w-4 h-4 text-gray-600" />  
               </div>  
@@ -82,7 +86,6 @@ export function Header({ onMenuToggle, currentView, user: propUser }: HeaderProp
               </div>  
             </div>  
           ) : (  
-            // Usuario no autenticado - mostrar botones de login  
             <>  
               <Link href="/auth/login" className="flex items-center gap-2 text-sm font-medium hover:text-blue-600">  
                 <User className="h-4 w-4" />  
@@ -118,10 +121,16 @@ export function Header({ onMenuToggle, currentView, user: propUser }: HeaderProp
               Información  
             </Link>  
             <hr />  
-              
             {user ? (  
-              // Usuario autenticado en móvil  
               <div className="space-y-2">  
+                {/* Botón de Dashboard para móvil */}  
+                <Link href="/dashboard" className="block w-full">  
+                  <Button variant="outline" className="w-full flex items-center gap-2">  
+                    <Settings className="h-4 w-4" />  
+                    Dashboard  
+                  </Button>  
+                </Link>  
+                  
                 <div className="flex items-center gap-2 text-sm font-medium text-gray-900">  
                   <User className="h-4 w-4" />  
                   {user.nombres || user.name || 'Usuario'}  
@@ -134,7 +143,6 @@ export function Header({ onMenuToggle, currentView, user: propUser }: HeaderProp
                 </button>  
               </div>  
             ) : (  
-              // Usuario no autenticado en móvil  
               <>  
                 <Link href="/auth/login" className="flex items-center gap-2 text-sm font-medium hover:text-blue-600">  
                   <User className="h-4 w-4" />  

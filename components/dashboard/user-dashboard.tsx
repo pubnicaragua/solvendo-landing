@@ -1,6 +1,5 @@
 "use client"  
-  
-import { useState, useEffect } from "react"  
+import { useState, useEffect, useCallback, useMemo } from "react"  
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"  
 import { Button } from "@/components/ui/button"  
 import { Badge } from "@/components/ui/badge"  
@@ -10,7 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"  
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"  
 import { supabase } from "@/lib/supabase"  
-import { useSupabaseData, useSupabaseInsert, useSupabaseUpdate } from "@/hooks/useSupabaseData"  
+import { useAuth } from "@/contexts/AuthContext"  
 import {  
   User,  
   CreditCard,  
@@ -24,24 +23,21 @@ import {
   Calculator  
 } from "lucide-react"  
   
-interface UserDashboardProps {  
-  user: {  
-    id: string  
-    name: string  
-    email: string  
-    plan: string  
-    empresa_id: string  
-  }  
-}  
-  
+// ✅ Interfaz actualizada con campos dinámicos  
 interface Plan {  
   id: string  
-  nombre: string  
+  nombre?: string  
   limite_empleados: number  
   limite_productos: number  
   api_pasarelas: boolean  
   dte_ilimitadas: boolean  
   precio: number  
+  // ✅ Nuevos campos para servicios dinámicos  
+  acceso_backoffice?: boolean  
+  control_inventario?: boolean  
+  pos_habilitado?: boolean  
+  app_colaboradores?: boolean  
+  reportes_avanzados?: boolean  
 }  
   
 interface MetodoPago {  
@@ -75,7 +71,9 @@ interface Usuario {
   activo: boolean  
 }  
   
-export function UserDashboard({ user }: UserDashboardProps) {  
+export function UserDashboard() {  
+  const { user, empresaId, sucursalId, loading: authLoading, refetchUserProfile } = useAuth()  
+  
   // Estados para datos dinámicos  
   const [plan, setPlan] = useState<Plan | null>(null)  
   const [metodosPago, setMetodosPago] = useState<MetodoPago[]>([])  
@@ -83,6 +81,8 @@ export function UserDashboard({ user }: UserDashboardProps) {
   const [cajas, setCajas] = useState<Caja[]>([])  
   const [empleados, setEmpleados] = useState<Usuario[]>([])  
   const [productos, setProductos] = useState<any[]>([])  
+  const [loading, setLoading] = useState(true)  
+  const [error, setError] = useState<string | null>(null)  
   
   // Estados para modales  
   const [editProfileOpen, setEditProfileOpen] = useState(false)  
@@ -93,9 +93,9 @@ export function UserDashboard({ user }: UserDashboardProps) {
   
   // Estados para formularios  
   const [profileForm, setProfileForm] = useState({  
-    nombres: user.name.split(' ')[0] || '',  
-    apellidos: user.name.split(' ').slice(1).join(' ') || '',  
-    email: user.email  
+    nombres: user?.nombres || '',  
+    apellidos: user?.apellidos || '',  
+    email: user?.email || ''  
   })  
   
   const [sucursalForm, setSucursalForm] = useState({  
@@ -121,261 +121,321 @@ export function UserDashboard({ user }: UserDashboardProps) {
     es_principal: false  
   })  
   
-  // Hooks para operaciones CRUD  
-  const { insert: insertSucursal } = useSupabaseInsert('sucursales')  
-  const { insert: insertCaja } = useSupabaseInsert('cajas')  
-  const { insert: insertEmpleado } = useSupabaseInsert('usuarios')  
-  const { insert: insertMetodoPago } = useSupabaseInsert('metodos_pago')  
-  const { update: updateUser } = useSupabaseUpdate('usuarios')  
-  const { update: updateSucursal } = useSupabaseUpdate('sucursales')  
-  
-  // Cargar datos iniciales  
+  // ✅ Actualizar formulario cuando cambie el usuario  
   useEffect(() => {  
-    if (user.empresa_id) {  
-      loadDashboardData()  
+    if (user) {  
+      setProfileForm({  
+        nombres: user.nombres || '',  
+        apellidos: user.apellidos || '',  
+        email: user.email || ''  
+      })  
     }  
-  }, [user.empresa_id])  
+  }, [user])  
   
-  const loadDashboardData = async () => {  
+  // ✅ CRÍTICO: Función que implementa el patrón multi-tenant del backoffice  
+  const loadDashboardData = useCallback(async () => {  
+    if (!empresaId) {  
+      console.warn('⚠️ No hay empresaId disponible para filtrar datos')  
+      setError('No se pudo determinar la empresa del usuario')  
+      setLoading(false)  
+      return  
+    }  
+  
     try {  
-      console.log('🔄 Recargando datos del dashboard...')  
+      setLoading(true)  
+      setError(null)  
+      console.log('🔄 Cargando datos filtrados para empresa:', empresaId)  
   
-      // Cargar plan  
-      const { data: planData } = await supabase  
+      // ✅ CRÍTICO: Cargar plan FILTRADO por empresa  
+      const { data: planData, error: planError } = await supabase  
         .from('planes')  
         .select('*')  
-        .eq('empresa_id', user.empresa_id)  
+        .eq('empresa_id', empresaId)  
         .single()  
-      if (planData) setPlan(planData)  
   
-      // Cargar métodos de pago  
-      const { data: metodosData } = await supabase  
-        .from('metodos_pago')  
-        .select('*')  
-        .eq('empresa_id', user.empresa_id)  
-        .eq('activo', true)  
-      if (metodosData) setMetodosPago(metodosData)  
-  
-      // Cargar sucursales  
-      const { data: sucursalesData } = await supabase  
-        .from('sucursales')  
-        .select('*')  
-        .eq('empresa_id', user.empresa_id)  
-        .eq('activo', true)  
-      if (sucursalesData) {  
-        console.log('✅ Sucursales cargadas:', sucursalesData.length)  
-        setSucursales(sucursalesData)  
+      if (planError) {  
+        console.warn('⚠️ No se encontró plan para empresa:', empresaId, planError)  
+      } else {  
+        console.log('✅ Plan cargado:', planData)  
+        setPlan(planData)  
       }  
   
-      // Cargar cajas (SIN campo numero)  
+      // ✅ CRÍTICO: Cargar métodos de pago FILTRADOS por empresa  
+      const { data: metodosData, error: metodosError } = await supabase  
+        .from('metodos_pago')  
+        .select('*')  
+        .eq('empresa_id', empresaId)  
+        .eq('activo', true)  
+  
+      if (metodosError) {  
+        console.warn('⚠️ Error cargando métodos de pago:', metodosError)  
+      } else {  
+        console.log('✅ Métodos de pago cargados:', metodosData?.length || 0)  
+        setMetodosPago(metodosData || [])  
+      }  
+  
+      // ✅ CRÍTICO: Cargar sucursales FILTRADAS por empresa  
+      const { data: sucursalesData, error: sucursalesError } = await supabase  
+        .from('sucursales')  
+        .select('*')  
+        .eq('empresa_id', empresaId)  
+        .eq('activo', true)  
+  
+      if (sucursalesError) {  
+        console.warn('⚠️ Error cargando sucursales:', sucursalesError)  
+      } else {  
+        console.log('✅ Sucursales cargadas:', sucursalesData?.length || 0)  
+        setSucursales(sucursalesData || [])  
+      }  
+  
+      // ✅ CRÍTICO: Cargar cajas FILTRADAS por empresa  
       const { data: cajasData, error: cajasError } = await supabase  
         .from('cajas')  
         .select('*')  
-        .eq('empresa_id', user.empresa_id)  
+        .eq('empresa_id', empresaId)  
         .eq('activo', true)  
-        
+  
       if (cajasError) {  
-        console.error('❌ Error cargando cajas:', cajasError)  
+        console.warn('⚠️ Error cargando cajas:', cajasError)  
       } else {  
         console.log('✅ Cajas cargadas:', cajasData?.length || 0)  
         setCajas(cajasData || [])  
       }  
   
-      // Cargar empleados  
-      const { data: empleadosData } = await supabase  
-        .from('usuarios')  
-        .select('*')  
-        .eq('empresa_id', user.empresa_id)  
+      // ✅ CRÍTICO: Cargar empleados usando el patrón EXACTO del backoffice  
+      const { data: usuarioEmpresaData, error: ueError } = await supabase  
+        .from('usuario_empresa')  
+        .select('usuario_id')  
+        .eq('empresa_id', empresaId)  
         .eq('activo', true)  
-      if (empleadosData) setEmpleados(empleadosData)  
   
-      // Cargar productos  
-      const { data: productosData } = await supabase  
+      if (ueError) {  
+        console.warn('⚠️ Error cargando relaciones usuario-empresa:', ueError)  
+        setEmpleados([])  
+      } else if (usuarioEmpresaData?.length) {  
+        const userIds = usuarioEmpresaData.map(item => item.usuario_id)  
+        console.log('🔍 IDs de usuarios de la empresa:', userIds)  
+  
+        const { data: empleadosData, error: empleadosError } = await supabase  
+          .from('usuarios')  
+          .select('*')  
+          .in('id', userIds)  
+          .eq('activo', true)  
+  
+        if (empleadosError) {  
+          console.warn('⚠️ Error cargando datos de empleados:', empleadosError)  
+          setEmpleados([])  
+        } else {  
+          console.log('✅ Empleados cargados:', empleadosData?.length || 0)  
+          setEmpleados(empleadosData || [])  
+        }  
+      } else {  
+        console.log('ℹ️ No hay empleados para esta empresa')  
+        setEmpleados([])  
+      }  
+  
+      // ✅ CRÍTICO: Cargar productos FILTRADOS por empresa  
+      const { data: productosData, error: productosError } = await supabase  
         .from('productos')  
         .select('*')  
-        .eq('empresa_id', user.empresa_id)  
+        .eq('empresa_id', empresaId)  
         .eq('activo', true)  
-      if (productosData) setProductos(productosData)  
   
+      if (productosError) {  
+        console.warn('⚠️ Error cargando productos:', productosError)  
+      } else {  
+        console.log('✅ Productos cargados:', productosData?.length || 0)  
+        setProductos(productosData || [])  
+      }  
+  
+      console.log('🎉 Carga de datos completada para empresa:', empresaId)  
     } catch (error) {  
-      console.error('❌ Error cargando datos del dashboard:', error)  
+      console.error('❌ Error crítico cargando datos del dashboard:', error)  
+      setError('Error al cargar los datos del dashboard')  
+    } finally {  
+      setLoading(false)  
     }  
-  }  
+  }, [empresaId])  
   
-  // Funciones CRUD  
-  const handleUpdateProfile = async () => {  
+  // ✅ Cargar datos cuando tengamos empresaId  
+  useEffect(() => {  
+    if (empresaId && !authLoading) {  
+      console.log('🚀 Iniciando carga de datos para empresa:', empresaId)  
+      loadDashboardData()  
+    } else if (!empresaId && !authLoading) {  
+      console.warn('⚠️ No hay empresaId disponible después de la autenticación')  
+      setError('Usuario no asociado a ninguna empresa')  
+      setLoading(false)  
+    }  
+  }, [empresaId, authLoading, loadDashboardData])  
+  
+  // ✅ Funciones CRUD optimizadas  
+  const handleUpdateProfile = useCallback(async () => {  
+    if (!user?.id) return  
+  
     try {  
-      const { success } = await updateUser(user.id, {  
-        nombres: profileForm.nombres,  
-        apellidos: profileForm.apellidos,  
-        email: profileForm.email  
-      })  
+      const { error } = await supabase  
+        .from('usuarios')  
+        .update({  
+          nombres: profileForm.nombres,  
+          apellidos: profileForm.apellidos,  
+          email: profileForm.email  
+        })  
+        .eq('id', user.id)  
   
-      if (success) {  
+      if (!error) {  
         setEditProfileOpen(false)  
-        loadDashboardData()  
+        await refetchUserProfile()  
       }  
     } catch (error) {  
       console.error('Error actualizando perfil:', error)  
     }  
-  }  
+  }, [user?.id, profileForm, refetchUserProfile])  
   
-  const handleAddSucursal = async () => {  
+  const handleAddSucursal = useCallback(async () => {  
+    if (!empresaId) return  
+  
     try {  
-      const { success } = await insertSucursal({  
-        empresa_id: user.empresa_id,  
-        nombre: sucursalForm.nombre,  
-        direccion: sucursalForm.direccion,  
-        activo: true  
-      })  
+      const { error } = await supabase  
+        .from('sucursales')  
+        .insert({  
+          empresa_id: empresaId,  
+          nombre: sucursalForm.nombre,  
+          direccion: sucursalForm.direccion,  
+          activo: true  
+        })  
   
-      if (success) {  
+      if (!error) {  
         setAddSucursalOpen(false)  
         setSucursalForm({ nombre: '', direccion: '' })  
-        loadDashboardData()  
+        await loadDashboardData()  
       }  
     } catch (error) {  
       console.error('Error agregando sucursal:', error)  
     }  
-  }  
+  }, [empresaId, sucursalForm, loadDashboardData])  
   
-  const handleAddCaja = async () => {  
+  const handleAddCaja = useCallback(async () => {  
+    if (!empresaId) return  
+  
     try {  
-      // Validar campos requeridos  
       if (!cajaForm.sucursal_id) {  
-        console.error('❌ Error: sucursal_id es requerido')  
-        return  
-      }  
-      if (!user.empresa_id) {  
-        console.error('❌ Error: empresa_id es requerido')  
         return  
       }  
   
-      console.log('📝 Insertando caja con datos:', {  
-        sucursal_id: cajaForm.sucursal_id,  
-        empresa_id: user.empresa_id,  
-        nombre: cajaForm.nombre,  
-        activo: true  
-      })  
+      const { error } = await supabase  
+        .from('cajas')  
+        .insert({  
+          sucursal_id: cajaForm.sucursal_id,  
+          empresa_id: empresaId,  
+          nombre: cajaForm.nombre,  
+          activo: true  
+        })  
   
-      const { success, error } = await insertCaja({  
-        sucursal_id: cajaForm.sucursal_id,  
-        empresa_id: user.empresa_id,  
-        nombre: cajaForm.nombre,  
-        activo: true  
-      })  
-  
-      if (success) {  
-        console.log('✅ Caja creada exitosamente')  
+      if (!error) {  
         setAddCajaOpen(false)  
         setCajaForm({ nombre: '', sucursal_id: '' })  
-          
-        // FORZAR ACTUALIZACIÓN INMEDIATA  
         await loadDashboardData()  
-          
-        // Opcional: También recargar solo las cajas  
-        const { data: cajasActualizadas } = await supabase  
-          .from('cajas')  
-          .select('*')  
-          .eq('empresa_id', user.empresa_id)  
-          .eq('activo', true)  
-          
-        if (cajasActualizadas) {  
-          console.log('🔄 Cajas actualizadas en estado:', cajasActualizadas.length)  
-          setCajas(cajasActualizadas)  
-        }  
-      } else {  
-        console.error('❌ Error creando caja:', error)  
-        alert('Error creando la caja. Por favor intenta nuevamente.')  
       }  
     } catch (error) {  
-      console.error('❌ Error agregando caja:', error)  
-      alert('Error inesperado. Por favor intenta nuevamente.')  
+      console.error('Error agregando caja:', error)  
     }  
-  }  
+  }, [empresaId, cajaForm, loadDashboardData])  
   
-  const handleAddEmpleado = async () => {  
+  const handleAddEmpleado = useCallback(async () => {  
+    if (!empresaId || !sucursalId) return  
+  
     try {  
-      // Primero crear usuario en auth  
-      const { data: authData, error: authError } = await supabase.auth.signUp({  
-        email: empleadoForm.email,  
-        password: 'temp123456' // Contraseña temporal  
+      const response = await fetch('/api/auto-migrate-user', {  
+        method: 'POST',  
+        headers: { 'Content-Type': 'application/json' },  
+        body: JSON.stringify({  
+          email: empleadoForm.email,  
+          nombres: empleadoForm.nombres,  
+          apellidos: empleadoForm.apellidos,  
+          empresa_id: empresaId,  
+          sucursal_id: sucursalId,  
+          rol: empleadoForm.rol  
+        })  
       })  
   
-      if (authError) throw authError  
-  
-      // Luego crear en tabla usuarios  
-      const { success } = await insertEmpleado({  
-        email: empleadoForm.email,  
-        nombres: empleadoForm.nombres,  
-        apellidos: empleadoForm.apellidos,  
-        empresa_id: user.empresa_id,  
-        rol: empleadoForm.rol,  
-        auth_user_id: authData.user?.id,  
-        activo: true  
-      })  
-  
-      if (success) {  
+      if (response.ok) {  
         setAddEmpleadoOpen(false)  
         setEmpleadoForm({ nombres: '', apellidos: '', email: '', rol: 'empleado' })  
-        loadDashboardData()  
+        await loadDashboardData()  
       }  
     } catch (error) {  
       console.error('Error agregando empleado:', error)  
     }  
-  }  
+  }, [empresaId, sucursalId, empleadoForm, loadDashboardData])  
   
-  const handleAddMetodoPago = async () => {  
+  const handleAddMetodoPago = useCallback(async () => {  
+    if (!empresaId) return  
+  
     try {  
       const numeroEnmascarado = `XXXX-XXXX-XXXX-${metodoPagoForm.numero.slice(-4)}`  
   
-      const { success } = await insertMetodoPago({  
-        empresa_id: user.empresa_id,  
-        tipo: metodoPagoForm.tipo,  
-        numero_enmascarado: numeroEnmascarado,  
-        es_principal: metodoPagoForm.es_principal,  
-        activo: true  
-      })  
+      const { error } = await supabase  
+        .from('metodos_pago')  
+        .insert({  
+          empresa_id: empresaId,  
+          tipo: metodoPagoForm.tipo,  
+          numero_enmascarado: numeroEnmascarado,  
+          es_principal: metodoPagoForm.es_principal,  
+          activo: true  
+        })  
   
-      if (success) {  
+      if (!error) {  
         setAddMetodoPagoOpen(false)  
         setMetodoPagoForm({ tipo: 'visa', numero: '', es_principal: false })  
-        loadDashboardData()  
+        await loadDashboardData()  
       }  
     } catch (error) {  
       console.error('Error agregando método de pago:', error)  
     }  
-  }  
+  }, [empresaId, metodoPagoForm, loadDashboardData])  
   
-  const handleDeleteSucursal = async (id: string) => {  
+  const handleDeleteSucursal = useCallback(async (id: string) => {  
     try {  
-      const { success } = await updateSucursal(id, { activo: false })  
-      if (success) {  
-        loadDashboardData()  
+      const { error } = await supabase  
+        .from('sucursales')  
+        .update({ activo: false })  
+        .eq('id', id)  
+  
+      if (!error) {  
+        await loadDashboardData()  
       }  
     } catch (error) {  
       console.error('Error eliminando sucursal:', error)  
     }  
+  }, [loadDashboardData])  
+  
+  // ✅ Memoizar datos procesados para mejor rendimiento  
+  const cajasFiltradasPorSucursal = useMemo(() => {  
+    return (sucursalId: string) => cajas.filter(c => c.sucursal_id === sucursalId)  
+  }, [cajas])  
+  
+  // ✅ Mostrar loading mientras se cargan los datos  
+  if (authLoading || loading) {  
+    return (  
+      <div className="container mx-auto p-6">  
+        <div className="text-center">  
+          <p>Cargando dashboard...</p>  
+        </div>  
+      </div>  
+    )  
   }  
   
-  // Función para descargar aplicaciones  
-  const handleDownloadApp = async (appType: 'pos' | 'backoffice') => {  
-    try {  
-      const urls = {  
-        pos: 'https://solvendo-pos.windsurf.build',  
-        backoffice: 'https://solvendo-backoffice.windsurf.build'  
-      }  
-  
-      // Abrir en nueva ventana  
-      window.open(urls[appType], '_blank')  
-  
-      // Opcional: Crear PWA instalable  
-      if ('serviceWorker' in navigator) {  
-        await navigator.serviceWorker.register('/sw.js')  
-      }  
-    } catch (error) {  
-      console.error(`Error descargando ${appType}:`, error)  
-    }  
+  // ✅ Mostrar error si no hay usuario o empresa  
+  if (!user || !empresaId) {  
+    return (  
+      <div className="container mx-auto p-6">  
+        <div className="text-center text-red-600">  
+          <p>Error: No se pudo cargar la información del usuario o empresa.</p>  
+          {error && <p className="text-sm mt-2">{error}</p>}  
+        </div>  
+      </div>  
+    )  
   }  
   
   return (  
@@ -398,7 +458,7 @@ export function UserDashboard({ user }: UserDashboardProps) {
                 </div>  
                 <div>  
                   <p className="text-sm text-gray-600">Productos registrados</p>  
-                  <p className="font-semibold">{productos.length}/{plan.limite_productos}+ productos</p>  
+                  <p className="font-semibold">{productos.length}/{plan.limite_productos} productos</p>  
                 </div>  
                 <div>  
                   <p className="text-sm text-gray-600">Integración API</p>  
@@ -413,9 +473,15 @@ export function UserDashboard({ user }: UserDashboardProps) {
                   </Badge>  
                 </div>  
               </div>  
+                
+              {/* ✅ Badges dinámicos basados en el plan real */}  
               <div className="flex flex-wrap gap-2">  
-                <Badge>App backoffice</Badge>  
-                <Badge>Control de inventario</Badge>  
+                {plan.acceso_backoffice && <Badge>App backoffice</Badge>}  
+                {plan.control_inventario && <Badge>Control de inventario</Badge>}  
+                {plan.pos_habilitado && <Badge>Sistema POS</Badge>}  
+                {plan.app_colaboradores && <Badge>App colaboradores</Badge>} 
+                {plan.reportes_avanzados && <Badge>Reportes avanzados</Badge>}  
+                {plan.api_pasarelas && <Badge>Integración API</Badge>}  
               </div>  
             </>  
           ) : (  
@@ -436,7 +502,7 @@ export function UserDashboard({ user }: UserDashboardProps) {
           <div className="flex items-center justify-between">  
             <div>  
               <p className="font-medium">Editar perfil</p>  
-              <p className="text-sm text-gray-600">{user.name} - {user.email}</p>  
+              <p className="text-sm text-gray-600">{user.nombres} {user.apellidos} - {user.email}</p>  
             </div>  
             <Dialog open={editProfileOpen} onOpenChange={setEditProfileOpen}>  
               <DialogTrigger asChild>  
@@ -551,7 +617,7 @@ export function UserDashboard({ user }: UserDashboardProps) {
                               <SelectContent>  
                                 <SelectItem value="empleado">Empleado</SelectItem>  
                                 <SelectItem value="supervisor">Supervisor</SelectItem>  
-                                <SelectItem value="gerente">Gerente</SelectItem>  
+                                <SelectItem value="administrador">Administrador</SelectItem>  
                               </SelectContent>  
                             </Select>  
                           </div>  
@@ -667,7 +733,7 @@ export function UserDashboard({ user }: UserDashboardProps) {
                             {/* Cajas de esta sucursal */}  
                             <div className="border-t pt-3">  
                               <div className="flex justify-between items-center mb-2">  
-                                <p className="text-sm font-medium">Cajas ({cajas.filter(c => c.sucursal_id === sucursal.id).length})</p>  
+                                <p className="text-sm font-medium">Cajas ({cajasFiltradasPorSucursal(sucursal.id).length})</p>  
                                 <Button  
                                   size="sm"  
                                   variant="outline"  
@@ -681,7 +747,7 @@ export function UserDashboard({ user }: UserDashboardProps) {
                                 </Button>  
                               </div>  
                               <div className="space-y-2">  
-                                {cajas.filter(caja => caja.sucursal_id === sucursal.id).map((caja) => (  
+                                {cajasFiltradasPorSucursal(sucursal.id).map((caja) => (  
                                   <div key={caja.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">  
                                     <div>  
                                       <p className="text-sm font-medium">{caja.nombre}</p>  
@@ -691,7 +757,7 @@ export function UserDashboard({ user }: UserDashboardProps) {
                                     </Button>  
                                   </div>  
                                 ))}  
-                                {cajas.filter(c => c.sucursal_id === sucursal.id).length === 0 && (  
+                                {cajasFiltradasPorSucursal(sucursal.id).length === 0 && (  
                                   <p className="text-xs text-gray-500 text-center py-2">No hay cajas asignadas</p>  
                                 )}  
                               </div>  
@@ -707,7 +773,6 @@ export function UserDashboard({ user }: UserDashboardProps) {
                     </div>  
                   </div>  
   
-                  {/* Modal para agregar caja */}  
                   <Dialog open={addCajaOpen} onOpenChange={setAddCajaOpen}>  
                     <DialogContent>  
                       <DialogHeader>  
@@ -747,14 +812,13 @@ export function UserDashboard({ user }: UserDashboardProps) {
                       </div>  
                     </DialogContent>  
                   </Dialog>  
-                </div>
-                </DialogContent>  
+                </div>  
+              </DialogContent>  
             </Dialog>  
           </div>  
         </CardContent>  
       </Card>  
   
-      {/* Método de Pago - Funcional */}  
       <Card>  
         <CardHeader>  
           <CardTitle className="flex items-center gap-2">  
@@ -836,7 +900,6 @@ export function UserDashboard({ user }: UserDashboardProps) {
         </CardContent>  
       </Card>  
   
-      {/* Descarga de Apps */}  
       <Card>  
         <CardHeader>  
           <CardTitle className="flex items-center gap-2">  
@@ -848,14 +911,14 @@ export function UserDashboard({ user }: UserDashboardProps) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">  
             <div className="p-4 border rounded-lg">  
               <h4 className="font-medium mb-2">Back Office:</h4>  
-              <Button onClick={() => handleDownloadApp('backoffice')} className="w-full">  
+              <Button onClick={() => window.open('https://solvendo-backoffice.windsurf.build', '_blank')} className="w-full">  
                 <Download className="h-4 w-4 mr-2" />  
                 Instalar App  
               </Button>  
             </div>  
             <div className="p-4 border rounded-lg">  
               <h4 className="font-medium mb-2">POS:</h4>  
-              <Button onClick={() => handleDownloadApp('pos')} className="w-full">  
+              <Button onClick={() => window.open('https://solvendo-pos.windsurf.build', '_blank')} className="w-full">  
                 <Download className="h-4 w-4 mr-2" />  
                 Instalar App  
               </Button>  

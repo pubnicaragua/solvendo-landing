@@ -1,5 +1,4 @@
 "use client"  
-  
 import { useEffect } from "react"  
 import { useRouter } from "next/navigation"  
 import { UserDashboard } from "@/components/dashboard/user-dashboard"  
@@ -36,18 +35,10 @@ export default function DashboardPage() {
   }  
   
   // Usuario autenticado, renderizar dashboard  
-  const dashboardUser = {  
-    id: user.id,  
-    name: user.nombres || 'Usuario',  
-    email: user.email,  
-    plan: 'Plan Premium',  
-    empresa_id: user.empresa_id || ''  
-  }  
-  
   return (  
     <div className="min-h-screen bg-gray-50">  
       <Header onMenuToggle={() => {}} currentView="dashboard" user={user} />  
-      <UserDashboard user={dashboardUser} />  
+      <UserDashboard />  
     </div>  
   )  
 }

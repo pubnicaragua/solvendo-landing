@@ -34,37 +34,38 @@ interface SaveProgressParams {
   
 export async function saveDemoProgress({ formData, currentStep, isFinalSubmission }: SaveProgressParams) {  
   console.log(`🔧 Server Action saveDemoProgress iniciada. Paso: ${currentStep}, Final: ${isFinalSubmission}`)  
-      
+          
   const supabase = createServerClient()  
   console.log('✅ Cliente Supabase creado')  
-    
+        
   try {  
     // Validar campos requeridos  
     if (!formData.name || !formData.email) {  
       console.error('❌ Campos requeridos faltantes: name o email')  
-      return {     
-        success: false,     
-        message: "Nombre y email son requeridos."     
+      return {         
+        success: false,         
+        message: "Nombre y email son requeridos."         
       }  
     }  
   
-    // Manejar contraseña  
-    let hashedPassword = formData.password || ''  
-    if (formData.password && currentStep >= 1 && !formData.password.startsWith('$2b$')) {  
-      hashedPassword = await bcrypt.hash(formData.password, 10)  
-      console.log('🔐 Contraseña hasheada')  
-    }  
-  
-    if (!hashedPassword) {  
-      hashedPassword = await bcrypt.hash('temp_password_' + Date.now(), 10)  
+    // ✅ CAMBIO CRÍTICO: NO hashear contraseña para demo_registrations  
+          // ✅ CAMBIO CRÍTICO: NO hashear contraseña para demo_registrations  
+    // Necesitamos la contraseña en texto plano para la migración automática  
+    let passwordToSave = formData.password || ''  
+      
+    if (!passwordToSave) {  
+      passwordToSave = 'temp_password_' + Date.now()  
       console.log('🔐 Contraseña temporal generada')  
+    } else {  
+      console.log('🔐 Contraseña guardada en texto plano para migración')  
+      console.log('🔑 Contraseña que se guardará:', passwordToSave) // ✅ Log de debugging  
     }  
   
-    // Preparar datos - CORRECCIÓN: manejar skuCount correctamente  
+    // Preparar datos  
     const dataToSave: any = {  
       name: formData.name.trim(),  
       email: formData.email.trim().toLowerCase(),  
-      password: hashedPassword,  
+      password: passwordToSave, // ✅ Contraseña en texto plano  
       rut: formData.rut?.trim() || null,  
       razon_social: formData.razonSocial?.trim() || null,  
       direccion: formData.direccion?.trim() || null,  
@@ -76,7 +77,6 @@ export async function saveDemoProgress({ formData, currentStep, isFinalSubmissio
       branches: formData.branches ? parseInt(formData.branches.toString()) : null,  
       total_boxes: formData.totalBoxes ? parseInt(formData.totalBoxes.toString()) : null,  
       dte: formData.dte || null,  
-      // CORRECCIÓN: Cambiar "1,500+" por "1.500+" para coincidir con el frontend  
       sku_count: formData.skuCount === "1.500+" ? `Más de 1,500: ${formData.estimatedSkuCount}` : formData.skuCount,  
       offline_mode: formData.offlineMode || null,  
       last_step_completed: parseInt(currentStep.toString()),  
@@ -89,15 +89,15 @@ export async function saveDemoProgress({ formData, currentStep, isFinalSubmissio
         dataToSave[key] = null  
       }  
     })  
-        
+            
     console.log('📝 Datos a guardar:', JSON.stringify(dataToSave, null, 2))  
   
     // Upsert en demo_registrations  
     const { data: result, error: dbError } = await supabase  
       .from("demo_registrations")  
-      .upsert(dataToSave, {     
-        onConflict: "email",     
-        ignoreDuplicates: false     
+      .upsert(dataToSave, {         
+        onConflict: "email",         
+        ignoreDuplicates: false         
       })  
       .select()  
   
@@ -108,9 +108,18 @@ export async function saveDemoProgress({ formData, currentStep, isFinalSubmissio
         hint: dbError.hint,  
         code: dbError.code  
       })  
-      return {     
-        success: false,     
-        message: "Error al guardar el progreso de la demo. Por favor, inténtalo de nuevo."     
+          
+      // MENSAJE ESPECÍFICO para RUT duplicado  
+      if (dbError.code === '23505' && dbError.message.includes('unique_rut')) {  
+        return {  
+          success: false,  
+          message: `El RUT ${formData.rut} ya está registrado. Si ya tienes una cuenta, inicia sesión con tu email original.`  
+        }  
+      }  
+          
+      return {         
+        success: false,         
+        message: "Error al guardar el progreso de la demo. Por favor, inténtalo de nuevo."         
       }  
     }  
   
@@ -174,9 +183,9 @@ export async function saveDemoProgress({ formData, currentStep, isFinalSubmissio
       }  
     }  
   
-    return {     
-      success: true,     
-      message: isFinalSubmission ? "¡Registro de demo exitoso!" : "Progreso guardado."     
+    return {         
+      success: true,         
+      message: isFinalSubmission ? "¡Registro de demo exitoso!" : "Progreso guardado."         
     }  
   } catch (error) {  
     console.error("💥 Error completo en saveDemoProgress:", error)  

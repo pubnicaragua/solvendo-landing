@@ -1,6 +1,6 @@
 "use client"  
   
-import { useState } from "react"  
+import { useState, useEffect } from "react"  
 import { useRouter } from "next/navigation"  
 import { Button } from "@/components/ui/button"  
 import { Input } from "@/components/ui/input"  
@@ -14,31 +14,43 @@ export function LoginForm() {
   const [email, setEmail] = useState("")  
   const [password, setPassword] = useState("")  
   const [showPassword, setShowPassword] = useState(false)  
-  const [loading, setLoading] = useState(false)  
+  const [isSubmitting, setIsSubmitting] = useState(false) // ✅ Estado local separado  
   const [error, setError] = useState("")  
-  const { login } = useAuth()  
+  const { signIn, user, loading: authLoading } = useAuth()  
   const router = useRouter()  
+  
+  // ✅ Efecto optimizado para navegación  
+  useEffect(() => {  
+    // Solo redirigir si hay usuario Y no estamos en proceso de autenticación  
+    if (user && !authLoading && !isSubmitting) {  
+      console.log('✅ Usuario autenticado, redirigiendo a dashboard...')  
+      router.push('/dashboard')  
+    }  
+  }, [user, authLoading, isSubmitting, router])  
   
   const handleSubmit = async (e: React.FormEvent) => {  
     e.preventDefault()  
-    setLoading(true)  
+      
+    // Prevenir múltiples submissions  
+    if (isSubmitting || authLoading) return  
+      
+    setIsSubmitting(true)  
     setError("")  
   
     try {  
-      await login(email, password)  
-      // Solo navegar después del login exitoso  
-      console.log('✅ Login exitoso, redirigiendo a dashboard...')  
-      // Pequeño delay para asegurar que el estado de auth se actualice completamente  
-      setTimeout(() => {  
-        router.push('/dashboard')  
-      }, 100)  
+      await signIn(email, password)  
+      console.log('✅ Login exitoso')  
+      // La navegación se maneja en el useEffect  
     } catch (error: any) {  
       console.error('❌ Error en login:', error)  
       setError(error.message || "Error al iniciar sesión")  
     } finally {  
-      setLoading(false)  
+      setIsSubmitting(false)  
     }  
   }  
+  
+  // ✅ Estado de loading combinado  
+  const isLoading = isSubmitting || authLoading  
   
   return (  
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">  
@@ -51,10 +63,10 @@ export function LoginForm() {
             Accede a tu cuenta de Solvendo  
           </p>  
         </div>  
-          
+            
         <Card>  
           <CardHeader>  
-            <CardTitle>Bienvenido de              vuelta</CardTitle>  
+            <CardTitle>Bienvenido de vuelta</CardTitle>  
           </CardHeader>  
           <CardContent>  
             <form onSubmit={handleSubmit} className="space-y-6">  
@@ -67,10 +79,10 @@ export function LoginForm() {
                   onChange={(e) => setEmail(e.target.value)}  
                   placeholder="correo@ejemplo.com"  
                   required  
-                  disabled={loading}  
+                  disabled={isLoading}  
                 />  
               </div>  
-                
+                  
               <div>  
                 <Label htmlFor="password">Contraseña</Label>  
                 <div className="relative">  
@@ -81,12 +93,13 @@ export function LoginForm() {
                     onChange={(e) => setPassword(e.target.value)}  
                     placeholder="Tu contraseña"  
                     required  
-                    disabled={loading}  
+                    disabled={isLoading}  
                   />  
                   <button  
                     type="button"  
                     className="absolute inset-y-0 right-0 pr-3 flex items-center"  
                     onClick={() => setShowPassword(!showPassword)}  
+                    disabled={isLoading}  
                   >  
                     {showPassword ? (  
                       <EyeOff className="h-4 w-4 text-gray-400" />  
@@ -117,12 +130,12 @@ export function LoginForm() {
               <Button  
                 type="submit"  
                 className="w-full"  
-                disabled={loading}  
+                disabled={isLoading}  
               >  
-                {loading ? (  
+                {isLoading ? (  
                   <>  
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />  
-                    Iniciando sesión...  
+                    {isSubmitting ? "Iniciando sesión..." : "Cargando..."}  
                   </>  
                 ) : (  
                   "Iniciar sesión"  

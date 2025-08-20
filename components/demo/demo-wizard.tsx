@@ -1,5 +1,4 @@
 "use client"  
-  
 import { useState, useMemo } from "react"  
 import { Button } from "@/components/ui/button"  
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"  
@@ -18,7 +17,48 @@ interface DemoWizardProps {
   initialData: any  
 }  
   
-// Función para formatear números al estilo chileno (puntos como separadores de miles)  
+interface PasswordRequirementsProps {  
+  password: string  
+}  
+  
+function PasswordRequirements({ password }: PasswordRequirementsProps) {  
+  const requirements = [  
+    {  
+      text: "Mínimo 6 caracteres",  
+      met: password.length >= 6  
+    },  
+    {  
+      text: "Al menos 1 letra mayúscula",  
+      met: /[A-Z]/.test(password)  
+    },  
+    {  
+      text: "Al menos 1 número",  
+      met: /[0-9]/.test(password)  
+    },  
+    {  
+      text: "Al menos 1 símbolo (!@#$%^&*)",  
+      met: /[!@#$%^&*(),.?":{}|<>]/.test(password)  
+    }  
+  ]  
+  
+  return (  
+    <div className="mt-2 space-y-1">  
+      {requirements.map((req, index) => (  
+        <div key={index} className="flex items-center gap-2 text-sm">  
+          <div className={`w-4 h-4 rounded-full flex items-center justify-center ${  
+            req.met ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-400'  
+          }`}>  
+            {req.met ? '✓' : '○'}  
+          </div>  
+          <span className={req.met ? 'text-green-600' : 'text-gray-500'}>  
+            {req.text}  
+          </span>  
+        </div>  
+      ))}  
+    </div>  
+  )  
+}  
+  
 function formatNumberChilean(num: number | string): string {  
   if (typeof num === "string") {  
     num = Number(num)  
@@ -32,6 +72,7 @@ function formatNumberChilean(num: number | string): string {
 export function DemoWizard({ initialData }: DemoWizardProps) {  
   const [currentStep, setCurrentStep] = useState(1)  
   const router = useRouter()  
+  
   const [formData, setFormData] = useState({  
     // Step 1: Registration  
     name: "",  
@@ -68,7 +109,6 @@ export function DemoWizard({ initialData }: DemoWizardProps) {
     { number: 4, title: "Configura tu sistema" },  
   ]  
   
-  // Validaciones  
   const validateEmail = (email: string) => {  
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/  
     return emailRegex.test(email)  
@@ -99,14 +139,12 @@ export function DemoWizard({ initialData }: DemoWizardProps) {
     return calculateDv(body) == digv  
   }  
   
-  // FUNCIÓN CORREGIDA: calculateDv con manejo correcto de tipos  
   const calculateDv = (bodyStr: string) => {  
-    let T = parseInt(bodyStr, 10) // Convertir explícitamente a número  
-    if (isNaN(T)) return "k" // Validar que sea un número válido  
-      
-    let M = 0,  
-      S = 1  
-    for (; T; T = Math.floor(T / 10)) S = (S + (T % 10) * (9 - (M++ % 6))) % 11  
+    let T = parseInt(bodyStr, 10)  
+    if (isNaN(T)) return "k"  
+    let M = 0, S = 1  
+    for (; T; T = Math.floor(T / 10))  
+      S = (S + (T % 10) * (9 - (M++ % 6))) % 11  
     return S ? String(S - 1) : "k"  
   }  
   
@@ -221,26 +259,102 @@ export function DemoWizard({ initialData }: DemoWizardProps) {
     return isValid  
   }  
   
+  // ✅ COMPLETAMENTE DINÁMICO: Crear empresa individual para cada usuario  
   const handleNext = async () => {  
     if (!validateCurrentStep()) {  
       return  
     }  
   
-    const saveResult = await saveDemoProgress({  
-      formData: formData,  
-      currentStep: currentStep,  
-      isFinalSubmission: currentStep === 4,  
-    })  
-  
-    if (!saveResult.success) {  
-      alert(saveResult.message)  
-      return  
-    }  
-  
     if (currentStep < 4) {  
+      const saveResult = await saveDemoProgress({  
+        formData: formData,  
+        currentStep: currentStep,  
+        isFinalSubmission: false,  
+      })  
+  
+      if (!saveResult.success) {  
+        alert(saveResult.message)  
+        return  
+      }  
+  
       setCurrentStep(currentStep + 1)  
     } else {  
-      router.push("/under-development")  
+      // ✅ STEP 4: Crear empresa individual y usuario  
+      try {  
+        console.log('🔄 Creando empresa individual y usuario...')  
+          
+        // ✅ PASO 1: Crear empresa individual para este usuario  
+        const empresaResponse = await fetch('/api/create-demo-company', {  
+          method: 'POST',  
+          headers: { 'Content-Type': 'application/json' },  
+          body: JSON.stringify({  
+            razon_social: formData.razonSocial,  
+            rut: formData.rut,  
+            direccion: formData.direccion,  
+            region: formData.region,  
+            comuna: formData.comuna,  
+            businessType: formData.businessType,  
+            apps: formData.apps,  
+            employees: formData.employees,  
+            estimatedEmployees: formData.estimatedEmployees,  
+            branches: formData.branches,  
+            dte: formData.dte,  
+            skuCount: formData.skuCount,  
+            estimatedSkuCount: formData.estimatedSkuCount,  
+            offlineMode: formData.offlineMode  
+          })  
+        })  
+  
+        const empresaResult = await empresaResponse.json()  
+          
+        if (!empresaResult.success) {  
+          throw new Error(empresaResult.error || 'Error creando empresa')  
+        }  
+  
+        const { empresaId, sucursalId } = empresaResult  
+  
+        // ✅ PASO 2: Crear usuario con su empresa individual  
+        const edgeFunctionData = {  
+          p_nombres: formData.name.split(' ')[0] || 'Usuario',  
+          p_apellidos: formData.name.split(' ').slice(1).join(' ') || 'Demo',  
+          p_rut: formData.rut,  
+          p_email: formData.email,  
+          p_telefono: '',  
+          p_direccion: formData.direccion,  
+          p_fecha_nacimiento: null,  
+          p_password: formData.password,  
+          p_empresa_id: empresaId, // ✅ Su propia empresa  
+          p_sucursal_id: sucursalId, // ✅ Su propia sucursal  
+          p_rol: 'administrador'  
+        }  
+  
+        const response = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/crear_usuario_con_password`, {  
+          method: 'POST',  
+          headers: {  
+            'Authorization': `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,  
+            'Content-Type': 'application/json'  
+          },  
+          body: JSON.stringify(edgeFunctionData)  
+        })  
+  
+        const result = await response.json()  
+  
+        if (result.success) {  
+          await saveDemoProgress({  
+            formData: formData,  
+            currentStep: currentStep,  
+            isFinalSubmission: true,  
+          })  
+  
+          console.log('✅ Usuario y empresa creados exitosamente')  
+          router.push("/auth/login")  
+        } else {  
+          throw new Error(result.error || 'Error creando usuario')  
+        }  
+      } catch (error) {  
+        console.error('❌ Error creando usuario:', error)  
+        alert('Error al crear el usuario. Por favor intenta nuevamente.')  
+      }  
     }  
   }  
   
@@ -268,33 +382,8 @@ export function DemoWizard({ initialData }: DemoWizardProps) {
     return selectedRegion ? selectedRegion.communes : []  
   }, [formData.region])  
   
-  const calculatePrice = useMemo(() => {  
-    let price = 69  
-  
-    if (formData.apps?.includes("employees")) price += 10  
-    if (formData.apps?.includes("pos")) price += 15  
-  
-    if (formData.employees === "+20" && Number(formData.estimatedEmployees) > 20) {  
-      price += Math.floor((Number(formData.estimatedEmployees) - 20) / 10) * 5  
-    }  
-  
-    if (formData.branches && formData.branches > 1) {  
-      price += (formData.branches - 1) * 5  
-    }  
-  
-    if (formData.dte === "yes") price += 20  
-    if (formData.offlineMode === "yes") price += 10  
-  
-    if (formData.skuCount === "1.500+" && Number(formData.estimatedSkuCount) > 1500) {  
-      price += Math.floor((Number(formData.estimatedSkuCount) - 1500) / 500) * 10  
-    }  
-  
-    return price  
-  }, [formData])  
-  
   const getDynamicPlanFeatures = useMemo(() => {  
     const features: string[] = []  
-  
     features.push("Límite de 50 colaboradores")  
     features.push("Registra más de 200 productos")  
     features.push("App backoffice")  
@@ -315,6 +404,7 @@ export function DemoWizard({ initialData }: DemoWizardProps) {
     if (formData.apps?.includes("employees")) {  
       features.push("App Gestión de Colaboradores")  
     }  
+  
     if (formData.apps?.includes("pos")) {  
       features.push("App Punto de Venta")  
     }  
@@ -322,9 +412,11 @@ export function DemoWizard({ initialData }: DemoWizardProps) {
     if (formData.dte === "yes") {  
       features.push("DTE Ilimitadas")  
     }  
+  
     if (formData.offlineMode === "yes") {  
       features.push("Modo sin conexión")  
     }  
+  
     if (formData.skuCount === "1.500+" && Number(formData.estimatedSkuCount) > 1500) {  
       features.push(`Gestión de SKU para más de ${formatNumberChilean(formData.estimatedSkuCount)} productos`)  
     } else if (formData.skuCount && formData.skuCount !== "1.500+") {  
@@ -413,6 +505,7 @@ export function DemoWizard({ initialData }: DemoWizardProps) {
                       required  
                     />  
                     {errors.password && <p className="text-red-500 text-sm mt-1">{errors.password}</p>}  
+                    {formData.password && <PasswordRequirements password={formData.password} />}  
                   </div>  
                   <div>  
                     <Label htmlFor="confirmPassword">Repetir contraseña</Label>  
@@ -619,7 +712,7 @@ export function DemoWizard({ initialData }: DemoWizardProps) {
                       id="branches"  
                       type="number"  
                       min="1"  
-                      value={formData.branches || 1}  
+                      value={formData.branches  || 1}  
                       onChange={(e) =>  
                         setFormData((prev) => ({ ...prev, branches: Number.parseInt(e.target.value) || 1 }))  
                       }  
@@ -647,6 +740,7 @@ export function DemoWizard({ initialData }: DemoWizardProps) {
                     />  
                     {errors.totalBoxes && <p className="text-red-500 text-sm mt-1">{errors.totalBoxes}</p>}  
                   </div>  
+  
                   <div>  
                     <Label>¿Desea Documento Tributario Electrónico?</Label>  
                     <RadioGroup  
@@ -666,6 +760,7 @@ export function DemoWizard({ initialData }: DemoWizardProps) {
                     </RadioGroup>  
                     {errors.dte && <p className="text-red-500 text-sm mt-1">{errors.dte}</p>}  
                   </div>  
+  
                   <div>  
                     <Label htmlFor="sku-count">Cantidad de SKU (productos)</Label>  
                     <Select  
@@ -686,11 +781,12 @@ export function DemoWizard({ initialData }: DemoWizardProps) {
                         <SelectItem value="1-300">1-300</SelectItem>  
                         <SelectItem value="300-650">300-650</SelectItem>  
                         <SelectItem value="650-1.500">650-1.500</SelectItem>  
-                        <SelectItem value="1.500+">Más de 1.500                          </SelectItem>  
+                        <SelectItem value="1.500+">Más de 1.500</SelectItem>  
                       </SelectContent>  
                     </Select>  
                     {errors.skuCount && <p className="text-red-500 text-sm mt-1">{errors.skuCount}</p>}  
                   </div>  
+  
                   {formData.skuCount === "1.500+" && (  
                     <div>  
                       <Label htmlFor="estimated-sku-count">Cantidad estimada de SKU</Label>  
@@ -708,6 +804,7 @@ export function DemoWizard({ initialData }: DemoWizardProps) {
                       )}  
                     </div>  
                   )}  
+  
                   <div>  
                     <Label>¿Desea modo sin conexión?</Label>  
                     <RadioGroup  
@@ -749,7 +846,7 @@ export function DemoWizard({ initialData }: DemoWizardProps) {
             </CardContent>  
           </Card>  
   
-          {/* Right Column for Solvendo Logo / Plan Summary */}  
+          {/* Right Column - Plan Summary (SIN PRECIO) */}  
           <div className="flex items-center justify-center">  
             {currentStep < 4 ? (  
               <div className="text-center space-y-6">  
@@ -762,7 +859,23 @@ export function DemoWizard({ initialData }: DemoWizardProps) {
             ) : (  
               <div className="text-center space-y-6">  
                 <Image src="/images/logo_negro.svg" alt="Solvendo Logo" width={180} height={180} className="mx-auto" />  
-                <p className="text-gray-600 max-w-md">¡Casi listo! Completa el registro para obtener tu demo.</p>  
+                <div className="bg-white p-6 rounded-lg shadow-lg max-w-md">  
+                  <h3 className="text-xl font-bold mb-4">Características de tu plan</h3>  
+                  <div className="text-left space-y-3">  
+                    <div className="text-sm text-gray-600">  
+                      <p className="font-medium mb-2">Incluye:</p>  
+                      <ul className="space-y-1">  
+                        {getDynamicPlanFeatures.map((feature, index) => (  
+                          <li key={index} className="flex items-start">  
+                            <span className="text-green-500 mr-2">✓</span>  
+                            <span>{feature}</span>  
+                          </li>  
+                        ))}  
+                      </ul>  
+                    </div>  
+                  </div>  
+                  <p className="text-gray-600 max-w-md mt-4">¡Casi listo! Completa el registro para obtener tu demo.</p>  
+                </div>  
               </div>  
             )}  
           </div>  
