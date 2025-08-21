@@ -12,7 +12,6 @@ import { supabase } from "@/lib/supabase"
 import { useAuth } from "@/contexts/AuthContext"  
 import {  
   User,  
-  CreditCard,  
   Building2,  
   Users,  
   Package,  
@@ -22,6 +21,7 @@ import {
   Trash2,  
   Calculator  
 } from "lucide-react"  
+import { toast } from "react-hot-toast"  
   
 // ✅ Interfaz actualizada con campos dinámicos  
 interface Plan {  
@@ -38,14 +38,6 @@ interface Plan {
   pos_habilitado?: boolean  
   app_colaboradores?: boolean  
   reportes_avanzados?: boolean  
-}  
-  
-interface MetodoPago {  
-  id: string  
-  tipo: string  
-  numero_enmascarado: string  
-  es_principal: boolean  
-  activo: boolean  
 }  
   
 interface Sucursal {  
@@ -76,7 +68,6 @@ export function UserDashboard() {
   
   // Estados para datos dinámicos  
   const [plan, setPlan] = useState<Plan | null>(null)  
-  const [metodosPago, setMetodosPago] = useState<MetodoPago[]>([])  
   const [sucursales, setSucursales] = useState<Sucursal[]>([])  
   const [cajas, setCajas] = useState<Caja[]>([])  
   const [empleados, setEmpleados] = useState<Usuario[]>([])  
@@ -89,7 +80,6 @@ export function UserDashboard() {
   const [addSucursalOpen, setAddSucursalOpen] = useState(false)  
   const [addCajaOpen, setAddCajaOpen] = useState(false)  
   const [addEmpleadoOpen, setAddEmpleadoOpen] = useState(false)  
-  const [addMetodoPagoOpen, setAddMetodoPagoOpen] = useState(false)  
   
   // Estados para formularios  
   const [profileForm, setProfileForm] = useState({  
@@ -111,14 +101,13 @@ export function UserDashboard() {
   const [empleadoForm, setEmpleadoForm] = useState({  
     nombres: '',  
     apellidos: '',  
+    rut: '',  
     email: '',  
+    telefono: '',  
+    direccion: '',  
+    fecha_nacimiento: '',  
+    password: '',  
     rol: 'empleado'  
-  })  
-  
-  const [metodoPagoForm, setMetodoPagoForm] = useState({  
-    tipo: 'visa',  
-    numero: '',  
-    es_principal: false  
   })  
   
   // ✅ Actualizar formulario cuando cambie el usuario  
@@ -158,20 +147,6 @@ export function UserDashboard() {
       } else {  
         console.log('✅ Plan cargado:', planData)  
         setPlan(planData)  
-      }  
-  
-      // ✅ CRÍTICO: Cargar métodos de pago FILTRADOS por empresa  
-      const { data: metodosData, error: metodosError } = await supabase  
-        .from('metodos_pago')  
-        .select('*')  
-        .eq('empresa_id', empresaId)  
-        .eq('activo', true)  
-  
-      if (metodosError) {  
-        console.warn('⚠️ Error cargando métodos de pago:', metodosError)  
-      } else {  
-        console.log('✅ Métodos de pago cargados:', metodosData?.length || 0)  
-        setMetodosPago(metodosData || [])  
       }  
   
       // ✅ CRÍTICO: Cargar sucursales FILTRADAS por empresa  
@@ -286,16 +261,26 @@ export function UserDashboard() {
       if (!error) {  
         setEditProfileOpen(false)  
         await refetchUserProfile()  
+        toast.success('Perfil actualizado correctamente')  
       }  
     } catch (error) {  
       console.error('Error actualizando perfil:', error)  
+      toast.error('Error al actualizar el perfil')  
     }  
   }, [user?.id, profileForm, refetchUserProfile])  
   
+  // ✅ VALIDACIÓN PERMISIVA: Permitir crear más sucursales que las configuradas inicialmente  
   const handleAddSucursal = useCallback(async () => {  
     if (!empresaId) return  
   
     try {  
+      // ✅ Permitir crear hasta 10 sucursales como máximo (más permisivo)  
+      const limiteSucursales = 10  
+      if (sucursales.length >= limiteSucursales) {  
+        toast.error(`Has alcanzado el límite máximo de sucursales (${limiteSucursales})`)  
+        return  
+      }  
+  
       const { error } = await supabase  
         .from('sucursales')  
         .insert({  
@@ -309,17 +294,28 @@ export function UserDashboard() {
         setAddSucursalOpen(false)  
         setSucursalForm({ nombre: '', direccion: '' })  
         await loadDashboardData()  
+        toast.success('Sucursal creada correctamente')  
       }  
     } catch (error) {  
       console.error('Error agregando sucursal:', error)  
+      toast.error('Error al crear la sucursal')  
     }  
-  }, [empresaId, sucursalForm, loadDashboardData])  
+  }, [empresaId, sucursales.length, sucursalForm, loadDashboardData])  
   
+  // ✅ VALIDACIÓN PERMISIVA: Permitir crear más cajas  
   const handleAddCaja = useCallback(async () => {  
     if (!empresaId) return  
   
     try {  
       if (!cajaForm.sucursal_id) {  
+        toast.error('Selecciona una sucursal')  
+        return  
+      }  
+  
+      // ✅ Permitir hasta 20 cajas por empresa (más permisivo)  
+      const limiteCajas = 20  
+      if (cajas.length >= limiteCajas) {  
+        toast.error(`Has alcanzado el límite máximo de cajas (${limiteCajas})`)  
         return  
       }  
   
@@ -336,64 +332,104 @@ export function UserDashboard() {
         setAddCajaOpen(false)  
         setCajaForm({ nombre: '', sucursal_id: '' })  
         await loadDashboardData()  
+        toast.success('Caja creada correctamente')  
       }  
     } catch (error) {  
       console.error('Error agregando caja:', error)  
+      toast.error('Error al crear la caja')  
     }  
-  }, [empresaId, cajaForm, loadDashboardData])  
+  }, [empresaId, cajas.length, cajaForm, loadDashboardData])  
   
+  // ✅ ACTUALIZADO: Usar edge function crear-colaborador directamente con validación permisiva  
   const handleAddEmpleado = useCallback(async () => {  
-    if (!empresaId || !sucursalId) return  
+    if (!empresaId || !sucursalId) {  
+      toast.error('Error: No se pudo determinar la empresa o sucursal')  
+      return  
+    }  
   
     try {  
-      const response = await fetch('/api/auto-migrate-user', {  
-        method: 'POST',  
-        headers: { 'Content-Type': 'application/json' },  
+      // ✅ Validación más permisiva - permitir hasta 20% más del límite del plan  
+      const limitePermisivo = Math.ceil((plan?.limite_empleados || 10) * 1.2)  
+ 
+      if (empleados.length >= limitePermisivo) {  
+        toast.error(`Has alcanzado el límite máximo de empleados (${limitePermisivo})`)  
+        return  
+      }  
+  
+      // Validaciones básicas  
+      if (!empleadoForm.nombres || !empleadoForm.email || !empleadoForm.rut) {  
+        toast.error('Por favor completa los campos obligatorios: Nombres, Email y RUT')  
+        return  
+      }  
+  
+      if (!empleadoForm.password || empleadoForm.password.length < 6) {  
+        toast.error('La contraseña debe tener al menos 6 caracteres')  
+        return  
+      }  
+  
+      // Validar si existe usuario con mismo rut  
+      const { data: existingUser } = await supabase  
+        .from("usuarios")  
+        .select("id")  
+        .eq("rut", empleadoForm.rut)  
+        .single()  
+  
+      if (existingUser) {  
+        toast.error("Ya existe un usuario con este RUT")  
+        return  
+      }  
+  
+      console.log('🔄 Creando empleado con edge function...')  
+  
+      // ✅ Llamar a la edge function crear-colaborador  
+      const resp = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/crear-colaborador`, {  
+        method: "POST",  
+        headers: {  
+          "Content-Type": "application/json",  
+          "Authorization": `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,  
+        },  
         body: JSON.stringify({  
-          email: empleadoForm.email,  
-          nombres: empleadoForm.nombres,  
-          apellidos: empleadoForm.apellidos,  
-          empresa_id: empresaId,  
-          sucursal_id: sucursalId,  
-          rol: empleadoForm.rol  
-        })  
+          p_nombres: empleadoForm.nombres,  
+          p_apellidos: empleadoForm.apellidos,  
+          p_rut: empleadoForm.rut,  
+          p_email: empleadoForm.email,  
+          p_telefono: empleadoForm.telefono,  
+          p_direccion: empleadoForm.direccion,  
+          p_fecha_nacimiento: empleadoForm.fecha_nacimiento || null,  
+          p_password: empleadoForm.password, // ✅ Contraseña personalizada  
+          p_empresa_id: empresaId,  
+          p_sucursal_id: sucursalId,  
+          p_rol: empleadoForm.rol || "empleado",  
+        }),  
+      })
+  
+      const data = await resp.json()  
+      console.log("📌 Respuesta Edge Function:", data)  
+  
+      if (!resp.ok || !data.success) {  
+        throw new Error(data.error || "Error desconocido al crear usuario")  
+      }  
+  
+      toast.success("Empleado creado correctamente")  
+      setAddEmpleadoOpen(false)  
+      setEmpleadoForm({  
+        nombres: '',  
+        apellidos: '',  
+        rut: '',  
+        email: '',  
+        telefono: '',  
+        direccion: '',  
+        fecha_nacimiento: '',  
+        password: '',  
+        rol: 'empleado'  
       })  
+      await loadDashboardData()  
   
-      if (response.ok) {  
-        setAddEmpleadoOpen(false)  
-        setEmpleadoForm({ nombres: '', apellidos: '', email: '', rol: 'empleado' })  
-        await loadDashboardData()  
-      }  
-    } catch (error) {  
-      console.error('Error agregando empleado:', error)  
+    } catch (error: any) {  
+      console.error("Error creando empleado:", error)  
+      toast.error("Error al crear el empleado")  
     }  
-  }, [empresaId, sucursalId, empleadoForm, loadDashboardData])  
-  
-  const handleAddMetodoPago = useCallback(async () => {  
-    if (!empresaId) return  
-  
-    try {  
-      const numeroEnmascarado = `XXXX-XXXX-XXXX-${metodoPagoForm.numero.slice(-4)}`  
-  
-      const { error } = await supabase  
-        .from('metodos_pago')  
-        .insert({  
-          empresa_id: empresaId,  
-          tipo: metodoPagoForm.tipo,  
-          numero_enmascarado: numeroEnmascarado,  
-          es_principal: metodoPagoForm.es_principal,  
-          activo: true  
-        })  
-  
-      if (!error) {  
-        setAddMetodoPagoOpen(false)  
-        setMetodoPagoForm({ tipo: 'visa', numero: '', es_principal: false })  
-        await loadDashboardData()  
-      }  
-    } catch (error) {  
-      console.error('Error agregando método de pago:', error)  
-    }  
-  }, [empresaId, metodoPagoForm, loadDashboardData])  
+  }, [empresaId, sucursalId, empleados.length, plan?.limite_empleados, empleadoForm, loadDashboardData])  
   
   const handleDeleteSucursal = useCallback(async (id: string) => {  
     try {  
@@ -404,9 +440,11 @@ export function UserDashboard() {
   
       if (!error) {  
         await loadDashboardData()  
+        toast.success('Sucursal eliminada correctamente')  
       }  
     } catch (error) {  
       console.error('Error eliminando sucursal:', error)  
+      toast.error('Error al eliminar la sucursal')  
     }  
   }, [loadDashboardData])  
   
@@ -473,15 +511,12 @@ export function UserDashboard() {
                   </Badge>  
                 </div>  
               </div>  
-                
+  
               {/* ✅ Badges dinámicos basados en el plan real */}  
               <div className="flex flex-wrap gap-2">  
                 {plan.acceso_backoffice && <Badge>App backoffice</Badge>}  
-                {plan.control_inventario && <Badge>Control de inventario</Badge>}  
                 {plan.pos_habilitado && <Badge>Sistema POS</Badge>}  
-                {plan.app_colaboradores && <Badge>App colaboradores</Badge>} 
-                {plan.reportes_avanzados && <Badge>Reportes avanzados</Badge>}  
-                {plan.api_pasarelas && <Badge>Integración API</Badge>}  
+                {plan.app_colaboradores && <Badge>App colaboradores</Badge>}  
               </div>  
             </>  
           ) : (  
@@ -600,12 +635,39 @@ export function UserDashboard() {
                             />  
                           </div>  
                           <div>  
+                            <Label htmlFor="emp-rut">RUT</Label>  
+                            <Input  
+                              id="emp-rut"  
+                              value={empleadoForm.rut}  
+                              onChange={(e) => setEmpleadoForm(prev => ({ ...prev, rut: e.target.value }))}  
+                              placeholder="12.345.678-9"  
+                            />  
+                          </div>  
+                          <div>  
                             <Label htmlFor="emp-email">Email</Label>  
                             <Input  
                               id="emp-email"  
                               type="email"  
                               value={empleadoForm.email}  
                               onChange={(e) => setEmpleadoForm(prev => ({ ...prev, email: e.target.value }))}  
+                            />  
+                          </div>  
+                          <div>  
+                            <Label htmlFor="emp-telefono">Teléfono</Label>  
+                            <Input  
+                              id="emp-telefono"  
+                              value={empleadoForm.telefono}  
+                              onChange={(e) => setEmpleadoForm(prev => ({ ...prev, telefono: e.target.value }))}  
+                            />  
+                          </div>  
+                          <div>  
+                            <Label htmlFor="emp-password">Contraseña</Label>  
+                            <Input  
+                              id="emp-password"  
+                              type="password"  
+                              value={empleadoForm.password}  
+                              onChange={(e) => setEmpleadoForm(prev => ({ ...prev, password: e.target.value }))}  
+                              minLength={6}  
                             />  
                           </div>  
                           <div>  
@@ -684,7 +746,7 @@ export function UserDashboard() {
                           </DialogHeader>  
                           <div className="space-y-4">  
                             <div>  
-                              <Label htmlFor="suc-nombre">Nombre</Label>  
+                            <Label htmlFor="suc-nombre">Nombre</Label>  
                               <Input  
                                 id="suc-nombre"  
                                 value={sucursalForm.nombre}  
@@ -730,7 +792,6 @@ export function UserDashboard() {
                                 </Button>  
                               </div>  
                             </div>  
-                            {/* Cajas de esta sucursal */}  
                             <div className="border-t pt-3">  
                               <div className="flex justify-between items-center mb-2">  
                                 <p className="text-sm font-medium">Cajas ({cajasFiltradasPorSucursal(sucursal.id).length})</p>  
@@ -816,87 +877,6 @@ export function UserDashboard() {
               </DialogContent>  
             </Dialog>  
           </div>  
-        </CardContent>  
-      </Card>  
-  
-      <Card>  
-        <CardHeader>  
-          <CardTitle className="flex items-center gap-2">  
-            <CreditCard className="h-5 w-5" />  
-            Método de pago  
-          </CardTitle>  
-        </CardHeader>  
-        <CardContent className="space-y-4">  
-          {metodosPago.length > 0 ? (  
-            metodosPago.map((metodo) => (  
-              <div key={metodo.id} className="flex items-center justify-between p-4 border rounded-lg">  
-                <div className="flex items-center gap-3">  
-                  <div className="w-10 h-6 bg-blue-600 rounded flex items-center justify-center">  
-                    <span className="text-white text-xs font-bold">{metodo.tipo.toUpperCase()}</span>  
-                  </div>  
-                  <div>  
-                    <p className="font-medium">{metodo.numero_enmascarado}</p>  
-                    <p className="text-sm text-gray-600">{metodo.es_principal ? "Tarjeta principal" : "Tarjeta secundaria"}</p>  
-                  </div>  
-                </div>  
-                <Badge variant={metodo.es_principal ? "default" : "secondary"}>  
-                  {metodo.es_principal ? "En uso" : "Disponible"}  
-                </Badge>  
-              </div>  
-            ))  
-          ) : (  
-            <p className="text-center text-gray-500 py-4">No hay métodos de pago registrados</p>  
-          )}  
-          <Dialog open={addMetodoPagoOpen} onOpenChange={setAddMetodoPagoOpen}>  
-            <DialogTrigger asChild>  
-              <Button variant="outline" className="w-full">  
-                <Plus className="h-4 w-4 mr-2" />  
-                Agregar método de pago  
-              </Button>  
-            </DialogTrigger>  
-            <DialogContent>  
-              <DialogHeader>  
-                <DialogTitle>Nuevo Método de Pago</DialogTitle>  
-              </DialogHeader>  
-              <div className="space-y-4">  
-                <div>  
-                  <Label htmlFor="tipo-tarjeta">Tipo de Tarjeta</Label>  
-                  <Select value={metodoPagoForm.tipo} onValueChange={(value) => setMetodoPagoForm(prev => ({ ...prev, tipo: value }))}>  
-                    <SelectTrigger>  
-                      <SelectValue />  
-                    </SelectTrigger>  
-                    <SelectContent>  
-                      <SelectItem value="visa">VISA</SelectItem>  
-                      <SelectItem value="mastercard">Mastercard</SelectItem>  
-                      <SelectItem value="amex">American Express</SelectItem>  
-                    </SelectContent>  
-                  </Select>  
-                </div>  
-                <div>  
-                  <Label htmlFor="numero-tarjeta">Número de Tarjeta</Label>  
-                  <Input  
-                    id="numero-tarjeta"  
-                    value={metodoPagoForm.numero}  
-                    onChange={(e) => setMetodoPagoForm(prev => ({ ...prev, numero: e.target.value }))}  
-                    placeholder="1234 5678 9012 3456"  
-                    maxLength={19}  
-                  />  
-                </div>  
-                <div className="flex items-center space-x-2">  
-                  <input  
-                    type="checkbox"  
-                    id="es-principal"  
-                    checked={metodoPagoForm.es_principal}  
-                    onChange={(e) => setMetodoPagoForm(prev => ({ ...prev, es_principal: e.target.checked }))}  
-                  />  
-                  <Label htmlFor="es-principal">Establecer como método principal</Label>  
-                </div>  
-                <Button onClick={handleAddMetodoPago} className="w-full">  
-                  Agregar Método de Pago  
-                </Button>  
-              </div>  
-            </DialogContent>  
-          </Dialog>  
         </CardContent>  
       </Card>  
   
